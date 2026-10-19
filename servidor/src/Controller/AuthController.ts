@@ -17,7 +17,7 @@ export default class AuthController {
         }
         res.json(await this.service.login(email, password));
        } catch (err: any){
-            res.status(500).json({error: err.message});
+            res.status(401).json({error: err.message});
        }
     }
 }
