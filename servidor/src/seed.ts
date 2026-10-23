@@ -5,6 +5,7 @@ import UsuarioDB from "./DB/UsuarioDB.js";
 import CarpetaDB from "./DB/CarpetaDB.js";
 import ArchivoDB from "./DB/ArchivoDB.js";
 import Usuario from "./Model/Usuario.js";
+import ComparticionDB from "./DB/ComparticionDB.js";
 
 /**
  * Carga inicial: crea los índices y los 3 usuarios.
@@ -16,6 +17,7 @@ const usuarioDB = new UsuarioDB();
 await usuarioDB.crearIndices();
 await new CarpetaDB().crearIndices();
 await new ArchivoDB().crearIndices();
+await new ComparticionDB().crearIndices();
 console.log("Índices creados");
 
 const hash = await bcrypt.hash("123456", 10);

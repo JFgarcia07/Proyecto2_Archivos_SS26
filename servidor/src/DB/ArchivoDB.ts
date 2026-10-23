@@ -27,7 +27,7 @@ export default class ArchivoDB {
     async guardarContenido(nombre: string, contenido: Buffer): Promise<ObjectId> {
         const subida = this.bucket().openUploadStream(nombre);
         const idContendio = subida.id as ObjectId;
-           
+
         await new Promise<void>((resolve, reject) => {
             subida.on("finish", () => resolve());
             subida.on("error", (error) => reject(error));
@@ -86,10 +86,10 @@ export default class ArchivoDB {
     /** Indica si ya existe un archivo activo con ese nombre en la carpeta. */
     async existeNombre(ownerId: ObjectId, carpetaId: ObjectId | null, nombre: string): Promise<boolean> {
         const encontrado = await this.coleccion().findOne({
-        ownerId: ownerId,
-        carpetaId: carpetaId,
-        nombre: nombre,
-        eliminado: false,
+            ownerId: ownerId,
+            carpetaId: carpetaId,
+            nombre: nombre,
+            eliminado: false,
         });
         return encontrado !== null;
     }
@@ -97,16 +97,16 @@ export default class ArchivoDB {
     /** Cambia el nombre y el tipo de un archivo. */
     async renombrar(id: ObjectId, nombre: string, tipo: "txt" | "md"): Promise<void> {
         await this.coleccion().updateOne(
-        { _id: id },
-        { $set: { nombre: nombre, tipo: tipo, fechaModificacion: new Date() } }
+            { _id: id },
+            { $set: { nombre: nombre, tipo: tipo, fechaModificacion: new Date() } }
         );
     }
 
     /** Cambia la carpeta de un archivo (null = raíz). */
     async mover(id: ObjectId, carpetaId: ObjectId | null): Promise<void> {
         await this.coleccion().updateOne(
-        { _id: id },
-        { $set: { carpetaId: carpetaId, fechaModificacion: new Date() } }
+            { _id: id },
+            { $set: { carpetaId: carpetaId, fechaModificacion: new Date() } }
         );
     }
 
@@ -115,5 +115,67 @@ export default class ArchivoDB {
         await this.coleccion().createIndex({ ownerId: 1, carpetaId: 1, eliminado: 1 });
         await this.coleccion().createIndex({ tipo: 1 });
         await this.coleccion().createIndex({ fechaCreacion: 1 });
+    }
+
+    /** Envía un archivo a la papelera (eliminado directamente por el usuario). */
+    async enviarAPapelera(id: ObjectId, fecha: Date): Promise<void> {
+        await this.coleccion().updateOne(
+            { _id: id },
+            { $set: { eliminado: true, eliminadoDirecto: true, fechaEliminacion: fecha } }
+        );
+    }
+
+    /** Envía a la papelera los archivos contenidos en las carpetas indicadas. */
+    async enviarPorCarpetas(carpetaIds: ObjectId[], fecha: Date): Promise<void> {
+        await this.coleccion().updateMany(
+            { carpetaId: { $in: carpetaIds }, eliminado: false },
+            { $set: { eliminado: true, eliminadoDirecto: false, fechaEliminacion: fecha } }
+        );
+    }
+
+    /** Saca un archivo de la papelera. */
+    async restaurar(id: ObjectId): Promise<void> {
+        await this.coleccion().updateOne(
+            { _id: id },
+            { $set: { eliminado: false, eliminadoDirecto: false, fechaEliminacion: null } }
+        );
+    }
+
+    /** Restaura los archivos que se fueron con una carpeta (misma fecha de eliminación). */
+    async restaurarPorCarpetas(carpetaIds: ObjectId[], fecha: Date): Promise<void> {
+        await this.coleccion().updateMany(
+            { carpetaId: { $in: carpetaIds }, eliminado: true, eliminadoDirecto: false, fechaEliminacion: fecha },
+            { $set: { eliminado: false, eliminadoDirecto: false, fechaEliminacion: null } }
+        );
+    }
+
+    /** Lista los archivos que el usuario eliminó directamente. */
+    async listarEliminadosDirectos(ownerId: ObjectId): Promise<Archivo[]> {
+        return await this.coleccion()
+            .find({ ownerId: ownerId, eliminadoDirecto: true })
+            .sort({ fechaEliminacion: -1 })
+            .toArray();
+    }
+
+    /** Devuelve todos los archivos (activos o no) de las carpetas indicadas. */
+    async listarPorCarpetas(carpetaIds: ObjectId[]): Promise<Archivo[]> {
+        return await this.coleccion().find({ carpetaId: { $in: carpetaIds } }).toArray();
+    }
+
+    /** Borra definitivamente los archivos: su contenido en GridFS y sus metadatos. */
+    async eliminarDefinitivo(archivos: Archivo[]): Promise<void> {
+        for (let i = 0; i < archivos.length; i++) {
+            try {
+                await this.bucket().delete(archivos[i].gridfsId);
+            } catch (error) {
+                // El contenido ya no existía; se continúa con los metadatos.
+            }
+            await this.coleccion().deleteOne({ _id: archivos[i]._id });
+        }
+    }
+
+    /** Archivos activos de una carpeta, sin filtrar por dueño (para contenido compartido). */
+    async listarDeCarpeta(carpetaId: ObjectId): Promise<Archivo[]> {
+        return await this.coleccion().find({ carpetaId: carpetaId, eliminado: false }).sort({ nombre: 1 }).toArray();
     }
 }

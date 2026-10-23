@@ -12,6 +12,7 @@ export default class Carpeta {
     public parentId: ObjectId | null;
     public ancestros: ObjectId[];
     public eliminada: boolean;
+    public eliminadaDirecta: boolean;
     public fechaEliminacion: Date | null;
     public fechaCreacion: Date;
     public _id?: ObjectId;
@@ -28,6 +29,7 @@ export default class Carpeta {
         this.parentId = parentId;
         this.ancestros = ancestros;
         this.eliminada = false;
+        this.eliminadaDirecta = false;
         this.fechaEliminacion = null;
         this.fechaCreacion = new Date();
     }

@@ -5,6 +5,8 @@ import Conexion from "./DB/Conexion.js";
 import AuthController from "./Controller/AuthController.js";
 import CarpetaController from "./Controller/CarpetaController.js";
 import ArchivoController from "./Controller/ArchivoController.js";
+import PapeleraController from "./Controller/PapeleraController.js";
+import ComparticionController from "./Controller/ComparticionController.js";
 
 const app = express();
 
@@ -21,6 +23,8 @@ app.get("/api/ping", (req, res) => {
 app.use("/api/auth", new AuthController().router);
 app.use("/api/carpetas", new CarpetaController().router);
 app.use("/api/archivos", new ArchivoController().router);
+app.use("/api/papelera", new PapeleraController().router);
+app.use("/api/comparticiones", new ComparticionController().router);
 
 // Primero se conecta a MongoDB y después se abre el puerto.
 await Conexion.obtener().conectar();

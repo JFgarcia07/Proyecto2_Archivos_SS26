@@ -1,0 +1,8 @@
+-- ============ USUARIOS (uno por cada área) ============
+-- Contraseña en texto plano para tu referencia (NO se guarda así en la BD):
+--   U0001 admin      -> admin123
+--   U0002 compras1   -> compras123
+--   U0003 inventario1-> inventario123
+--   U0004 ventas1    -> ventas123
+
+ACLS

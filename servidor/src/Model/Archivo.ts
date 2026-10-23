@@ -23,6 +23,7 @@ export default class Archivo {
     public carpetaId: ObjectId | null,
     public gridfsId: ObjectId,
     public eliminado: boolean = false,
+    public eliminadoDirecto: boolean = false,
     public fechaEliminacion: Date | null = null,
     public fechaCreacion: Date = new Date(),
     public fechaModificacion: Date = new Date(),
