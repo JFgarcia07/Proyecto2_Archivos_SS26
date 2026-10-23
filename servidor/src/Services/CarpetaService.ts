@@ -3,6 +3,7 @@ import CarpetaDB from "../DB/CarpetaDB.js";
 import Carpeta from "../Model/Carpeta.js";
 import ErrorApp from "../Model/ErrorApp.js";
 import { Sesion } from "../Middleware/AuthMiddleware.js";
+import ActividadService from "./ActividadService.js";
 
 /**
  * Reglas de negocio de las carpetas: nombre único por padre, acceso solo del
@@ -10,6 +11,7 @@ import { Sesion } from "../Middleware/AuthMiddleware.js";
 */
 export default class CarpetaService {
     private carpetaDB: CarpetaDB = new CarpetaDB();
+    private actividad: ActividadService = new ActividadService();
 
     /** Convierte un texto en ObjectId. @throws ErrorApp 400 si no es válido. */
     private convertirId(id: string): ObjectId {
@@ -22,7 +24,7 @@ export default class CarpetaService {
     /** Valida que el nombre no esté vacío. @return el nombre sin espacios sobrantes. */
     private validarNombre(nombre: unknown): string {
         if (typeof nombre !== "string" || nombre.trim() === "") {
-        throw new ErrorApp("El nombre es requerido", 400);
+            throw new ErrorApp("El nombre es requerido", 400);
         }
         return nombre.trim();
     }
@@ -34,7 +36,7 @@ export default class CarpetaService {
     private async buscarCarpetaPropia(sesion: Sesion, idCarpeta: string): Promise<Carpeta> {
         const carpeta = await this.carpetaDB.buscarPorId(this.convertirId(idCarpeta));
         if (carpeta === null || carpeta.eliminada || carpeta.ownerId.toString() !== sesion.id) {
-        throw new ErrorApp("Carpeta no encontrada", 404);
+            throw new ErrorApp("Carpeta no encontrada", 404);
         }
         return carpeta;
     }
@@ -53,17 +55,18 @@ export default class CarpetaService {
         let ancestros: ObjectId[] = [];
 
         if (idPadre !== null) {
-        const padre = await this.buscarCarpetaPropia(sesion, idPadre);
-        padreId = padre._id!;
-        ancestros = [...padre.ancestros, padre._id!]; // ruta del padre + el padre
+            const padre = await this.buscarCarpetaPropia(sesion, idPadre);
+            padreId = padre._id!;
+            ancestros = [...padre.ancestros, padre._id!]; // ruta del padre + el padre
         }
 
         if (await this.carpetaDB.existeNombre(ownerId, padreId, nombreLimpio)) {
-        throw new ErrorApp("Ya existe una carpeta con ese nombre aquí", 409);
+            throw new ErrorApp("Ya existe una carpeta con ese nombre aquí", 409);
         }
 
         const carpeta = new Carpeta(nombreLimpio, ownerId, padreId, ancestros);
         const id = await this.carpetaDB.crear(carpeta);
+        await this.actividad.registrar(sesion.id, "CREAR_CARPETA", "carpeta", id, nombreLimpio, null);
         return { id: id, nombre: nombreLimpio, parentId: padreId };
     }
 
@@ -71,8 +74,8 @@ export default class CarpetaService {
     async listar(sesion: Sesion, idPadre: string | null): Promise<Carpeta[]> {
         let padreId: ObjectId | null = null;
         if (idPadre !== null) {
-        const padre = await this.buscarCarpetaPropia(sesion, idPadre);
-        padreId = padre._id!;
+            const padre = await this.buscarCarpetaPropia(sesion, idPadre);
+            padreId = padre._id!;
         }
         return await this.carpetaDB.listarHijos(new ObjectId(sesion.id), padreId);
     }
@@ -86,9 +89,10 @@ export default class CarpetaService {
         const carpeta = await this.buscarCarpetaPropia(sesion, idCarpeta);
 
         if (await this.carpetaDB.existeNombre(carpeta.ownerId, carpeta.parentId, nombre)) {
-        throw new ErrorApp("Ya existe una carpeta con ese nombre aquí", 409);
+            throw new ErrorApp("Ya existe una carpeta con ese nombre aquí", 409);
         }
         await this.carpetaDB.renombrar(carpeta._id!, nombre);
+        await this.actividad.registrar(sesion.id, "RENOMBRAR", "carpeta", carpeta._id!, nombre, "Antes: " + carpeta.nombre);
     }
 
     /**
@@ -104,26 +108,26 @@ export default class CarpetaService {
         let ancestrosNuevos: ObjectId[] = [];
 
         if (idDestino !== null) {
-        const destino = await this.buscarCarpetaPropia(sesion, idDestino);
+            const destino = await this.buscarCarpetaPropia(sesion, idDestino);
 
-        // Evitar ciclos: el destino no puede ser la carpeta ni estar dentro de ella.
-        const esLaMisma = destino._id!.equals(carpeta._id!);
-        let estaDentro = false;
-        for (let i = 0; i < destino.ancestros.length; i++) {
-            if (destino.ancestros[i].equals(carpeta._id!)) {
-            estaDentro = true;
+            // Evitar ciclos: el destino no puede ser la carpeta ni estar dentro de ella.
+            const esLaMisma = destino._id!.equals(carpeta._id!);
+            let estaDentro = false;
+            for (let i = 0; i < destino.ancestros.length; i++) {
+                if (destino.ancestros[i].equals(carpeta._id!)) {
+                    estaDentro = true;
+                }
             }
-        }
-        if (esLaMisma || estaDentro) {
-            throw new ErrorApp("No se puede mover una carpeta dentro de sí misma o de sus subcarpetas", 400);
-        }
+            if (esLaMisma || estaDentro) {
+                throw new ErrorApp("No se puede mover una carpeta dentro de sí misma o de sus subcarpetas", 400);
+            }
 
-        destinoId = destino._id!;
-        ancestrosNuevos = [...destino.ancestros, destino._id!];
+            destinoId = destino._id!;
+            ancestrosNuevos = [...destino.ancestros, destino._id!];
         }
 
         if (await this.carpetaDB.existeNombre(carpeta.ownerId, destinoId, carpeta.nombre)) {
-        throw new ErrorApp("Ya existe una carpeta con ese nombre en el destino", 409);
+            throw new ErrorApp("Ya existe una carpeta con ese nombre en el destino", 409);
         }
 
         const largoAnterior = carpeta.ancestros.length;
@@ -133,9 +137,10 @@ export default class CarpetaService {
         // y solo cambia el prefijo (la ruta hasta la carpeta movida).
         const descendientes = await this.carpetaDB.buscarDescendientes(carpeta._id!);
         for (let i = 0; i < descendientes.length; i++) {
-        const sub = descendientes[i];
-        const cola = sub.ancestros.slice(largoAnterior);
-        await this.carpetaDB.actualizarAncestros(sub._id!, [...ancestrosNuevos, ...cola]);
+            const sub = descendientes[i];
+            const cola = sub.ancestros.slice(largoAnterior);
+            await this.carpetaDB.actualizarAncestros(sub._id!, [...ancestrosNuevos, ...cola]);
         }
+        await this.actividad.registrar(sesion.id, "MOVER", "carpeta", carpeta._id!, carpeta.nombre, null);
     }
 }

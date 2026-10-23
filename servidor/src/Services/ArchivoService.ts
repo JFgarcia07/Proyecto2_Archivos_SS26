@@ -4,6 +4,7 @@ import CarpetaDB from "../DB/CarpetaDB.js";
 import Archivo from "../Model/Archivo.js";
 import ErrorApp from "../Model/ErrorApp.js";
 import { Sesion } from "../Middleware/AuthMiddleware.js";
+import ActividadService from "./ActividadService.js";
 
 /**
  * Reglas de negocio de los archivos:
@@ -12,6 +13,7 @@ import { Sesion } from "../Middleware/AuthMiddleware.js";
 export default class ArchivoService {
     private archivoDB: ArchivoDB = new ArchivoDB();
     private carpetaDB: CarpetaDB = new CarpetaDB();
+    private actividad: ActividadService = new ActividadService();
 
     /** Convierte un texto en ObjectId. @throws ErrorApp 400 si no es válido. */
     private convertirId(id: string): ObjectId {
@@ -92,6 +94,7 @@ export default class ArchivoService {
         const gridfsId = await this.archivoDB.guardarContenido(nombre, contenido);
         const archivo = new Archivo(nombre, tipo, contenido.length, ownerId, carpetaId, gridfsId);
         const id = await this.archivoDB.crear(archivo);
+        await this.actividad.registrar(sesion.id, "SUBIR_ARCHIVO", "archivo", id, nombre, null);
 
         return { id: id, nombre: nombre, tipo: tipo, tamano: contenido.length, carpetaId: carpetaId };
     }
@@ -109,6 +112,7 @@ export default class ArchivoService {
     async descargar(sesion: Sesion, idArchivo: string) {
         const archivo = await this.buscarArchivoPropio(sesion, idArchivo);
         const flujo = this.archivoDB.abrirContenido(archivo.gridfsId);
+        await this.actividad.registrar(sesion.id, "DESCARGAR_ARCHIVO", "archivo", archivo._id!, archivo.nombre, null);
         return { archivo: archivo, flujo: flujo };
     }
 
@@ -125,6 +129,7 @@ export default class ArchivoService {
             throw new ErrorApp("Ya existe un archivo con ese nombre en la carpeta", 409);
         }
         await this.archivoDB.renombrar(archivo._id!, nombre, tipo);
+        await this.actividad.registrar(sesion.id, "RENOMBRAR", "archivo", archivo._id!, nombre, "Antes: " + archivo.nombre);
     }
 
     /**

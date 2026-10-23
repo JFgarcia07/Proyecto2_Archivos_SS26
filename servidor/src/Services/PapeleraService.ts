@@ -6,6 +6,7 @@ import Archivo from "../Model/Archivo.js";
 import ErrorApp from "../Model/ErrorApp.js";
 import { Sesion } from "../Middleware/AuthMiddleware.js";
 import ComparticionDB from "../DB/ComparticionDB.js";
+import ActividadService from "./ActividadService.js";
 
 
 /**
@@ -16,6 +17,7 @@ export default class PapeleraService {
     private carpetaDB: CarpetaDB = new CarpetaDB();
     private archivoDB: ArchivoDB = new ArchivoDB();
     private comparticionDB: ComparticionDB = new ComparticionDB();
+    private actividad: ActividadService = new ActividadService();
 
     /** Convierte un texto en ObjectId. @throws ErrorApp 400 si no es válido. */
     private convertirId(id: string): ObjectId {
@@ -65,12 +67,14 @@ export default class PapeleraService {
 
         await this.carpetaDB.enviarAPapelera(carpeta._id!, fecha);
         await this.archivoDB.enviarPorCarpetas(ids, fecha);
+        await this.actividad.registrar(sesion.id, "ELIMINAR", "carpeta", carpeta._id!, carpeta.nombre, "Enviada a la papelera");
     }
 
     /** Envía un archivo a la papelera. */
     async enviarArchivo(sesion: Sesion, idArchivo: string): Promise<void> {
         const archivo = await this.buscarArchivo(sesion, idArchivo, false);
         await this.archivoDB.enviarAPapelera(archivo._id!, new Date());
+        await this.actividad.registrar(sesion.id, "ELIMINAR", "archivo", archivo._id!, archivo.nombre, "Enviado a la papelera");
     }
 
     /** Lista lo que el usuario eliminó directamente: carpetas y archivos. */
@@ -101,6 +105,7 @@ export default class PapeleraService {
         const ids = await this.idsConDescendientes(carpeta);
         await this.carpetaDB.restaurar(carpeta._id!, carpeta.fechaEliminacion!);
         await this.archivoDB.restaurarPorCarpetas(ids, carpeta.fechaEliminacion!);
+        await this.actividad.registrar(sesion.id, "RESTAURAR", "carpeta", carpeta._id!, carpeta.nombre, null);
     }
 
     /**
@@ -120,6 +125,7 @@ export default class PapeleraService {
             throw new ErrorApp("Ya existe un archivo con ese nombre en su ubicación original", 409);
         }
         await this.archivoDB.restaurar(archivo._id!);
+        await this.actividad.registrar(sesion.id, "RESTAURAR", "archivo", archivo._id!, archivo.nombre, null);
     }
 
     /** Elimina para siempre una carpeta, sus subcarpetas y todos sus archivos (incluido el contenido). */
@@ -136,6 +142,7 @@ export default class PapeleraService {
 
         await this.archivoDB.eliminarDefinitivo(archivos);
         await this.carpetaDB.eliminarDefinitivo(ids);
+        await this.actividad.registrar(sesion.id, "ELIMINAR_DEFINITIVO", "carpeta", carpeta._id!, carpeta.nombre, null);
     }
 
     /** Elimina para siempre un archivo y su contenido en GridFS. */
@@ -143,5 +150,6 @@ export default class PapeleraService {
         const archivo = await this.buscarArchivo(sesion, idArchivo, true);
         await this.comparticionDB.eliminarPorRecursos([archivo._id!]);
         await this.archivoDB.eliminarDefinitivo([archivo]);
+        await this.actividad.registrar(sesion.id, "ELIMINAR_DEFINITIVO", "archivo", archivo._id!, archivo.nombre, null);
     }
 }

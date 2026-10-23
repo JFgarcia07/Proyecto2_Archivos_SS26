@@ -9,6 +9,7 @@ import Archivo from "../Model/Archivo.js";
 import ErrorApp from "../Model/ErrorApp.js";
 import AccesoService, { Nivel } from "./AccesoService.js";
 import { Sesion } from "../Middleware/AuthMiddleware.js";
+import ActividadService from "./ActividadService.js";
 
 /**
  * Reglas de compartición: solo el dueño comparte, cambia permisos o retira accesos.
@@ -20,6 +21,7 @@ export default class ComparticionService {
     private archivoDB: ArchivoDB = new ArchivoDB();
     private usuarioDB: UsuarioDB = new UsuarioDB();
     private acceso: AccesoService = new AccesoService();
+    private actividad: ActividadService = new ActividadService();
 
     private convertirId(id: string): ObjectId {
         if (!ObjectId.isValid(id)) {
@@ -103,10 +105,15 @@ export default class ComparticionService {
         }
 
         let recursoId: ObjectId;
+        let nombreRecurso: string;
         if (tipoRecurso === "carpeta") {
-            recursoId = (await this.buscarCarpeta(sesion, idRecurso, Nivel.DUENO))._id!;
+            const carpeta = await this.buscarCarpeta(sesion, idRecurso, Nivel.DUENO);
+            recursoId = carpeta._id!;
+            nombreRecurso = carpeta.nombre;
         } else {
-            recursoId = (await this.buscarArchivo(sesion, idRecurso, Nivel.DUENO))._id!;
+            const archivo = await this.buscarArchivo(sesion, idRecurso, Nivel.DUENO);
+            recursoId = archivo._id!;
+            nombreRecurso = archivo.nombre;
         }
 
         const destinatario = await this.usuarioDB.buscarPorEmail(email.trim());
@@ -117,14 +124,18 @@ export default class ComparticionService {
             throw new ErrorApp("No puedes compartir un recurso contigo mismo", 400);
         }
 
+        const detalle = "Con " + destinatario.email + " (" + permisoValido + ")";
         const existente = await this.comparticionDB.buscarExistente(recursoId, destinatario._id!);
+
         if (existente !== null) {
             await this.comparticionDB.cambiarPermiso(existente._id!, permisoValido);
+            await this.actividad.registrar(sesion.id, "CAMBIAR_PERMISO", tipoRecurso, recursoId, nombreRecurso, detalle);
             return { id: existente._id, actualizado: true };
         }
 
         const nueva = new Comparticion(tipoRecurso, recursoId, new ObjectId(sesion.id), destinatario._id!, permisoValido);
         const id = await this.comparticionDB.crear(nueva);
+        await this.actividad.registrar(sesion.id, "COMPARTIR", tipoRecurso, recursoId, nombreRecurso, detalle);
         return { id: id, actualizado: false };
     }
 
@@ -142,12 +153,16 @@ export default class ComparticionService {
         const permisoValido = this.validarPermiso(permiso);
         const comparticion = await this.buscarComparticionPropia(sesion, idComparticion);
         await this.comparticionDB.cambiarPermiso(comparticion._id!, permisoValido);
+        const nombre = await this.nombreRecurso(comparticion);
+        await this.actividad.registrar(sesion.id, "CAMBIAR_PERMISO", comparticion.tipoRecurso, comparticion.recursoId, nombre, "Nuevo permiso: " + permisoValido);
     }
 
     /** Retira el acceso concedido. */
     async retirar(sesion: Sesion, idComparticion: string): Promise<void> {
         const comparticion = await this.buscarComparticionPropia(sesion, idComparticion);
         await this.comparticionDB.eliminar(comparticion._id!);
+        const nombre = await this.nombreRecurso(comparticion);
+        await this.actividad.registrar(sesion.id, "RETIRAR_ACCESO", comparticion.tipoRecurso, comparticion.recursoId, nombre, null);
     }
 
     /** Lista lo que el usuario compartió con otros (sin recursos en la papelera). */
@@ -215,6 +230,7 @@ export default class ComparticionService {
     /** Datos y flujo de contenido de un archivo al que el usuario tiene acceso de lectura. */
     async descargar(sesion: Sesion, idArchivo: string) {
         const archivo = await this.buscarArchivo(sesion, idArchivo, Nivel.LECTURA);
+        await this.actividad.registrar(sesion.id, "DESCARGAR_ARCHIVO", "archivo", archivo._id!, archivo.nombre, "Archivo compartido");
         return { archivo: archivo, flujo: this.archivoDB.abrirContenido(archivo.gridfsId) };
     }
 
@@ -238,5 +254,6 @@ export default class ComparticionService {
             throw new ErrorApp("Ya existe un archivo con ese nombre en la carpeta", 409);
         }
         await this.archivoDB.renombrar(archivo._id!, nombre, extension);
+        await this.actividad.registrar(sesion.id, "RENOMBRAR", "archivo", archivo._id!, nombre, "Antes: " + archivo.nombre);
     }
 }
