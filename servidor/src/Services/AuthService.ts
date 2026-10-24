@@ -18,11 +18,14 @@ export default class AuthService {
             process.env.JWT_SECRET as string,
             { expiresIn: '1h'}
         );
-        return {
+         return {
             token,
-            usuario:{
-                usuario: {id: usuario._id!.toString(), nombre: usuario.nombre, email: usuario.email, rol: usuario.rol}
+            usuario: {
+                id: usuario._id!.toString(),
+                nombre: usuario.nombre,
+                email: usuario.email,
+                rol: usuario.rol
             }
-        }
+        };
     }
 }

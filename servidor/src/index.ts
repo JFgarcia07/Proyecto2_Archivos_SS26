@@ -8,6 +8,7 @@ import ArchivoController from "./Controller/ArchivoController.js";
 import PapeleraController from "./Controller/PapeleraController.js";
 import ComparticionController from "./Controller/ComparticionController.js";
 import ActividadController from "./Controller/ActividadController.js";
+import ReporteController from "./Controller/ReporteController.js";
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use("/api/archivos", new ArchivoController().router);
 app.use("/api/papelera", new PapeleraController().router);
 app.use("/api/comparticiones", new ComparticionController().router);
 app.use("/api/actividad", new ActividadController().router);
+app.use("/api/reportes", new ReporteController().router);
 
 // Primero se conecta a MongoDB y después se abre el puerto.
 await Conexion.obtener().conectar();
